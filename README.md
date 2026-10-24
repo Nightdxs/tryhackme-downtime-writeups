@@ -1,15 +1,13 @@
 # It's Downtime! - TryHackMe Writeups
-WRITEUP DEL EVENTO IT'S DOWNTIME! | TRYHACKME
-
 Nighmar3 · CiberSecUNI
 
 Ocho retos: triage SOC, threat hunting, respuesta a incidentes y análisis forense.
 
-[PDF del dossier](WRITEUP.pdf) · [Scripts](scripts) · [Capturas y evidencias](evidencias) · [Guía del paquete](LEEME.md)
+[PDF (primera versión)](WRITEUP.pdf) · [Scripts](scripts) · [Capturas y evidencias](evidencias) · [Guía del paquete](LEEME.md)
 
 ## Contenido
 
-- [00. Alcance, resultados y lectura de la evidencia](#reto-00)
+- [00. Antes de empezar](#reto-00)
 - [01. Repossessed: triage de alertas SOC](#reto-01)
 - [02. Quiet As The Grave: reconstrucción de la intrusión](#reto-02)
 - [03. Deadmen Tell No Logs: decisiones de respuesta](#reto-03)
@@ -18,15 +16,15 @@ Ocho retos: triage SOC, threat hunting, respuesta a incidentes y análisis foren
 - [06. Day-O: de memoria ejecutable a caché descifrada](#reto-06)
 - [07. Strange & Unusual Activity: C2 entre tráfico legítimo](#reto-07)
 - [08. Dead Endpoint: recuperación del ransomware](#reto-08)
-- [09. Conclusiones y trazabilidad](#reto-09)
+- [09. Notas finales](#reto-09)
 
 <a id="reto-00"></a>
 
-## 00. Alcance, resultados y lectura de la evidencia
+## 00. Antes de empezar
 
-Este dossier reúne las soluciones trabajadas durante la sesión. El objetivo es explicar cómo se pasó de un indicio a una conclusión verificable, conservar las respuestas aceptadas y facilitar la reproducción de los análisis que cuentan con artefactos y comandos guardados.
+Aquí dejamos las notas de los ocho retos de It's Downtime!: qué encontramos, qué comandos usamos y cómo salieron las respuestas. Las capturas son de la resolución y los scripts están en el repositorio.
 
-Las capturas son pruebas de la sesión, no ilustraciones generadas. Los recortes se identifican como tales y se conserva la captura original. Los comandos se presentan normalizados para su lectura: se omiten errores de tecleo y problemas del escritorio remoto que no cambian el análisis.
+Limpiamos los comandos para que se puedan copiar sin arrastrar los errores de tecleo de la terminal. Los recortes de pantalla están indicados; también guardamos las imágenes completas.
 
 | Reto | Resultado observado | Evidencia disponible |
 |---|---|---|
@@ -39,23 +37,23 @@ Las capturas son pruebas de la sesión, no ilustraciones generadas. Los recortes
 | Strange & Unusual Activity | 100 %; 5 respuestas aceptadas | Registros Zeek, consultas y captura técnica |
 | Dead Endpoint | 100 %; 6 respuestas aceptadas | Disco, desensamblado, recuperación autenticada y checklist |
 
-### Criterios del informe
+### Sobre estas notas
 
-Se diferencia entre ejecución observada, intención deducida del código y resultado confirmado. Un comando de subida no acredita por sí solo la recepción remota. Un error de acceso no equivale a un movimiento lateral exitoso. Las fechas de los artefactos pertenecen a cada escenario; no se mezclan en una cronología única del evento.
+Cada reto tiene sus propias fechas. Las horas de las tablas pertenecen a los registros del laboratorio, no al día en que resolvimos el evento.
 
-Repossessed y el tabletop se documentan al nivel de detalle que conserva su evaluación. En The Waiting Room se recuperaron las respuestas aceptadas, pero no la transcripción técnica completa del análisis original: no se atribuye un algoritmo, nombre de intérprete o comando que no pueda verificarse con lo conservado.
+De Repossessed y del tabletop conservamos sobre todo la evaluación final. De The Waiting Room tenemos las respuestas verificadas, pero faltan las notas completas de la extracción. En esos apartados dejamos claro hasta dónde se puede reconstruir el proceso.
 
 <a id="reto-01"></a>
 
 ## 01. Repossessed: triage de alertas SOC
 
-### Objetivo y enfoque
+### Las alertas
 
-Marketing abrió un press kit sospechoso y el analista debía clasificar nueve alertas. El trabajo consistió en relacionar procesos, cuentas, activos y conexiones antes de decidir si cada señal representaba actividad maliciosa o una operación legítima.
+El escenario arranca cuando Marketing abre un press kit sospechoso. Había nueve alertas que revisar: procesos, conexiones, enumeración y actividad remota.
 
-La severidad y el nombre de una regla no bastan para emitir el veredicto. En la evaluación aparecen dos alertas con la misma categoría de proceso hijo sospechoso y dos de conexión externa tras compresión; dentro de cada categoría hubo actividad clasificada como verdadera y falsa positiva. Esto demuestra por qué el contexto de ejecución es decisivo.
+Un detalle útil de este reto: la misma regla aparece entre los verdaderos y los falsos positivos. Pasa con los procesos hijo sospechosos y con las conexiones posteriores a una compresión. Había que mirar qué proceso lo había provocado y qué ocurría alrededor.
 
-### Resultados que conserva la evaluación
+### Clasificaciones guardadas
 
 | ID visible | Regla / actividad | Clasificación aceptada |
 |---|---|---|
@@ -67,25 +65,25 @@ La severidad y el nombre de una regla no bastan para emitir el veredicto. En la 
 | 6352 | Suspicious Child Process Spawned | Falso positivo |
 | 6358 | Suspicious External Connection Following Archive Creation | Falso positivo |
 
-La captura muestra nueve alertas cerradas y tasas de identificación de verdaderos y falsos positivos del 100 %. La tabla anterior reproduce las siete filas legibles en el resumen conservado; no reconstruye las otras dos clasificaciones sin evidencia.
+Terminamos con nueve alertas cerradas y un 100 % tanto en TP como en FP. En la captura se leen siete clasificaciones, que son las de la tabla. Las otras dos no quedaron visibles en el resumen guardado.
 
 ![Figura 1. Recorte de la evaluación: clasificaciones visibles. La captura completa se incluye en el paquete.](evidencias/soc-clasificacion-recorte.png)
 
 ![Figura 2. Recorte de métricas: 100 % en TP y FP; nueve alertas cerradas.](evidencias/soc-metricas-recorte.png)
 
-### Lección operativa
+### Qué había que mirar
 
-Un buen cierre explica qué proceso actuó, quién lo ejecutó, qué produjo y por qué esa combinación sostiene la clasificación. La similitud entre alertas legítimas y maliciosas obliga a correlacionar eventos, no a clasificar por palabras clave.
+Lo que conviene llevarse de aquí es esa comparación entre alertas casi iguales: el nombre de la detección no resolvía el caso. Había que seguir el proceso, la cuenta y la conexión asociados.
 
 <a id="reto-02"></a>
 
 ## 02. Quiet As The Grave: reconstrucción de la intrusión
 
-### Hipótesis y alcance
+### Por dónde empezó la búsqueda
 
-La hipótesis del simulador proponía un acceso mediante un señuelo a un desarrollador, seguido de reutilización de credenciales y herramientas de Windows. La evidencia conservada confirma el helper malicioso, persistencia, credenciales de servicio, movimiento lateral y preparación de una transferencia externa. El canal de entrega inicial y la recepción efectiva del archivo en el servidor externo no quedaron demostrados por la telemetría revisada.
+En este escenario seguimos un helper malicioso en un puesto de desarrollo. A partir de él aparecieron la persistencia, las credenciales de servicio y los saltos a otros equipos. Los registros revisados no bastan para precisar cómo llegó el señuelo ni para confirmar que el servidor externo recibió el archivo final.
 
-El resultado final fue una investigación exitosa con 998 puntos. Se conserva también una evaluación intermedia fallida; el resultado de referencia de este dossier es la captura final exitosa, no ese intento previo.
+La investigación terminó con 998 puntos. Hubo un intento anterior fallido; la captura de abajo corresponde a la evaluación final.
 
 ### Cronología: 10 de septiembre de 2026, UTC
 
@@ -102,17 +100,17 @@ El resultado final fue una investigación exitosa con 998 puntos. Se conserva ta
 | 16:27:28 | Creación de review-cache.zip | 9741 y 9801; staging de material accesible |
 | 16:27:54 | curl.exe con --upload-file hacia el C2 | 9807 y 46271; comando de exfiltración observado |
 
-### Correlación entre origen y destino
+### Seguir los saltos entre equipos
 
-THM-SREYES (10.60.10.20) ejecutó el helper bajo s.reyes. El script configuraba el C2 `https://45.147.230.131:8443`, rutas `/register`, `/task` y `/result`, y un intervalo de 150 segundos. Más tarde se copió a AppData Local y se configuró una clave Run de usuario.
+El punto de partida fue THM-SREYES (10.60.10.20), con la cuenta s.reyes ejecutando el helper. El script usaba `https://45.147.230.131:8443` como C2, con las rutas `/register`, `/task` y `/result`, y esperaba 150 segundos entre consultas. Después se copió a AppData Local y añadió una clave Run del usuario.
 
-El acceso a `C:\StudioProjects\NeuralNexus\tools\deploy-settings.json` permitió construir credenciales para `svc-studioops`. La sesión remota no se confirmó solo por el New-PSSession del origen: un inicio de sesión de red tipo 3 y un proceso hijo de wsmprovhost.exe en THM-LSULLIVAN (10.60.10.21) acreditaron el acceso. La misma lógica permitió confirmar el salto a THM-MSMITH (10.60.10.22).
+El siguiente paso salió de `C:\StudioProjects\NeuralNexus\tools\deploy-settings.json`: sus datos permitían construir credenciales para `svc-studioops`. Para comprobar el salto a THM-LSULLIVAN (10.60.10.21), cruzamos el New-PSSession del origen con el logon de red tipo 3 y un hijo de wsmprovhost.exe en destino. Con esa misma comprobación pudimos seguir el salto a THM-MSMITH (10.60.10.22).
 
-Por el contrario, los mensajes AccessDenied contra DC-01 y el script de mantenimiento son pruebas de intentos fallidos. No se estableció compromiso del controlador de dominio, ejecución como SYSTEM ni elevación administrativa exitosa.
+Los intentos contra DC-01 y el script de mantenimiento devolvían AccessDenied. En esos casos el comando estaba registrado, pero el acceso había fallado. Tampoco encontramos una elevación exitosa a administrador o SYSTEM.
 
-### Consultas de reproducción
+### Búsquedas usadas
 
-Los campos `event_id` de estas consultas identifican registros de la investigación; no deben confundirse con los códigos de evento Windows, como 4624 o 4104.
+Ojo con `event_id` en estas búsquedas: es el identificador del registro del simulador. No es el Event ID de Windows, como 4624 o 4104.
 
 ```text
 index=* ComputerName="THM-SREYES" (event_id=44850 OR event_id=9603)
@@ -122,33 +120,33 @@ index=* ComputerName="THM-SREYES" (event_id=9741 OR event_id=9801)
 index=* ComputerName="THM-SREYES" (event_id=9807 OR event_id=46271)
 ```
 
-### Colección y salida de información
+### El ZIP y la subida al C2
 
-Los comandos prepararon archivos de `approved-release` de Marketing y `release-notes` del proyecto en un directorio temporal, y los comprimieron como `review-cache.zip`. Después se observó curl.exe dirigido a `/ingest/review-cache.zip` en el mismo C2. No se conservaron una respuesta HTTP, el estado de salida ni una confirmación de recepción. Tampoco se inspeccionó el contenido completo del ZIP: no corresponde afirmar que se robó el build íntegro o los backups.
+Al final se reunieron archivos de `approved-release` de Marketing y `release-notes` del proyecto en un directorio temporal. Se comprimieron como `review-cache.zip` y apareció curl.exe con `--upload-file` hacia `/ingest/review-cache.zip` en el C2. Aquí la prueba llega hasta el comando: no guardamos una respuesta HTTP ni una confirmación de recepción. Tampoco revisamos todo el ZIP como para afirmar que contenía el build completo o los backups.
 
 ![Figura 3. Evaluación final de Quiet As The Grave: investigación exitosa, 998 puntos.](evidencias/tryhackme-threat-hunting-aprobado.png)
 
-### Respuesta sugerida a partir de la evidencia
+### Qué revisar después
 
-Contener los tres puestos implicados, cerrar las sesiones de svc-studioops, rotar las credenciales expuestas y preservar la clave Run y el helper antes de retirarlos. Revisar los permisos de WinRM y las rutas de despliegue, y buscar el mismo endpoint C2 en otros activos. Son recomendaciones derivadas del análisis, no acciones aplicadas a sistemas reales.
+Como respuesta al incidente, habría que contener los tres equipos y rotar las credenciales de svc-studioops. También revisaríamos los permisos de WinRM y buscaríamos el C2 y la clave Run en el resto del entorno. Son medidas propuestas a partir del caso; el ejercicio consistía en investigar la telemetría.
 
 <a id="reto-03"></a>
 
 ## 03. Deadmen Tell No Logs: decisiones de respuesta
 
-### Contexto y resultado
+### Resultado del ejercicio
 
-El evento identifica este ejercicio como Deadmen Tell No Logs. La captura final del simulador lo clasifica como Sabotage y muestra 143/150 puntos. Ambos nombres se conservan para evitar confundir el título de la tarjeta del evento con la categoría interna del ejercicio.
+La tarjeta del evento lo llama Deadmen Tell No Logs; al terminar, el simulador muestra la categoría Sabotage. La puntuación fue 143/150.
 
-La conclusión narrativa confirma tres resultados: preservación del último punto de restauración verificado antes de la destrucción completa de BAK-01, detección del paquete de lanzamiento saboteado antes de distribuirlo y comunicación al comité de lanzamiento con tiempo para una decisión informada de continuidad.
+Según el cierre del ejercicio, se consiguió conservar el último punto de restauración verificado antes de perder BAK-01. También se detectó el paquete de lanzamiento saboteado antes de distribuirlo y se avisó al comité de lanzamiento.
 
-También indica que el equipo de crisis se ocupó del secuestro de la cuenta de backup, la comunicación pública y la coordinación legal. NeuralNexus se lanzó con un build limpio. La suplantación en redes sociales se gestionó junto con la plataforma, sin impacto adicional sobre clientes según la narrativa del simulador.
+El cierre cuenta además que el equipo de crisis gestionó la cuenta de backup comprometida, la comunicación pública y la parte legal. NeuralNexus salió con un build limpio y la suplantación en redes se trató con la plataforma sin más impacto en los clientes.
 
-### Lectura de la evaluación
+### Qué quedó guardado
 
-El resultado es alto, pero no perfecto. Este writeup no presenta 143/150 como puntuación máxima ni inventa el texto de las quince decisiones. La evidencia conservada permite explicar el resultado y las prioridades de respuesta; no conserva una transcripción suficiente para reproducir cada opción elegida.
+No guardamos el texto de las quince decisiones, así que este apartado recoge el desenlace y la puntuación. No sirve como una lista de opciones para repetir exactamente la partida.
 
-Las prioridades que ilustra el desenlace son preservar una restauración utilizable, separar contención técnica de coordinación de crisis y validar la integridad del paquete antes de decidir el lanzamiento. Se trata de una interpretación del resultado, no de citas literales de cada decisión.
+La parte más clara del resultado es el orden de prioridades: conservar una copia que se pueda restaurar, comprobar el paquete y dar al comité información suficiente para decidir sobre el lanzamiento.
 
 ![Figura 4. Conclusión narrativa del tabletop y puntuación de 143/150.](evidencias/tryhackme-tabletop-143-150.png)
 
@@ -156,16 +154,16 @@ Las prioridades que ilustra el desenlace son preservar una restauración utiliza
 
 ## 04. Handbook for the Recently Compromised
 
-### Evidencia inicial y extracción
+### Abrir los EVTX
 
-Se proporcionaron `Microsoft-Windows-Sysmon%4Operational.evtx` y `PowerShell-Operational.evtx`. Sysmon permite seguir las creaciones de procesos, mientras que PowerShell conserva bloques de script útiles para deshacer la fragmentación de cadenas.
+Los archivos estaban en `~/Desktop/artifacts`: `Microsoft-Windows-Sysmon%4Operational.evtx` y `PowerShell-Operational.evtx`. Usamos Sysmon para seguir los procesos y PowerShell para leer los bloques de script.
 
 ```bash
 evtx_dump ~/Desktop/artifacts/Microsoft-Windows-Sysmon%4Operational.evtx > /tmp/sysmon.xml
 evtx_dump ~/Desktop/artifacts/PowerShell-Operational.evtx > /tmp/powershell.xml
 ```
 
-El extracto completo se conserva en el paquete local de trabajo y se omite de esta publicación. Incluye tanto actividad preparatoria como la cadena del ataque; el primer evento del archivo no se toma automáticamente como el primer evento de intrusión.
+La salida completa quedó en las notas locales y no se subió al repositorio. Incluía comandos de preparación del laboratorio además del ataque, así que no bastaba con elegir el primer evento por fecha.
 
 ### Cadena confirmada: 2 de octubre de 2026
 
@@ -177,9 +175,9 @@ El extracto completo se conserva en el paquete local de trabajo y se omite de es
 | 05:02:06.974 | PowerShell ejecuta el script temporal con -ep bypass |
 | 05:02:08.209 | schtasks.exe crea StudioPipelineSync para ejecutarse al iniciar sesión |
 
-La selección `gci C:\Windows\System32\certu*.exe` ocultaba parcialmente el nombre. La creación posterior del proceso certutil.exe resolvió la ambigüedad y confirmó la utilidad real. El bloque PowerShell también mostró un check-in a `/checkin`, la tarea programada y la escritura de una caché `.sync-cache` con la flag decodificada desde Base64.
+El comodín era la primera pista: `gci C:\Windows\System32\certu*.exe`. Podía ocultar el nombre en el comando, pero el evento de creación del proceso mostraba `certutil.exe`. En PowerShell también aparecían la petición a `/checkin`, la tarea programada y una escritura a `.sync-cache` con la flag decodificada desde Base64.
 
-El uso de mshta se asocia a `T1218.005` y la tarea programada a `T1053.005`, ambas respuestas aceptadas por el reto. En el extracto se observan limpiezas de logs previas a la cadena; sin atribución adicional no se presentan como una acción del intruso dentro de esta reconstrucción.
+Las dos respuestas de MITRE fueron `T1218.005` para mshta y `T1053.005` para la tarea programada. Antes de esta cadena había limpiezas de logs; con lo guardado no pudimos atribuirlas al intruso.
 
 ### Respuestas aceptadas
 
@@ -191,19 +189,19 @@ El uso de mshta se asocia a `T1218.005` y la tarea programada a `T1053.005`, amb
 | Persistencia | `T1053.005` |
 | Flag | `THM{tH3_Gh0st_w1tH_Th3_M05T}` |
 
-La flag no se obtuvo por adivinación. El bloque guardado concatena un Base64 en `$blob` y lo transforma con FromBase64String y UTF8.GetString. Para reproducirlo sin ejecutar el script, basta concatenar únicamente los literales de esa asignación y usar `base64.b64decode` en un intérprete de análisis.
+La flag salió del bloque que construía `$blob`: concatenaba varios literales Base64 y los pasaba por FromBase64String y UTF8.GetString. Para leerla bastaba unir esos literales y decodificarlos con `base64.b64decode`, sin ejecutar el script completo.
 
 <a id="reto-05"></a>
 
 ## 05. The Waiting Room: adjunto, ejecución y documento transferido
 
-### Problema investigado
+### El correo y el adjunto
 
-Michelle Smith recibió un correo de proveedor sobre pagos. Después de abrir un adjunto, su equipo contactó un servicio desconocido. El conjunto del reto incluía un EML, eventos Windows y un PCAP: tres fuentes que responden a preguntas distintas y deben relacionarse.
+Michelle Smith había recibido un correo de proveedor relacionado con pagos. Tras abrir el adjunto, el equipo contactó un servicio desconocido. Teníamos un EML, eventos Windows y un PCAP para seguir el recorrido.
 
-El EML identifica el adjunto real, los eventos muestran qué se ejecutó y el PCAP permite examinar las transferencias. El resultado final del reto fue 100 %. Las respuestas se volvieron a consultar en la página completada al preparar este dossier.
+El reto quedó al 100 %. Al preparar estas notas volvimos a abrir la sala completada para comprobar los hashes, la clave y el resto de las respuestas de la tabla.
 
-### Hallazgos y respuestas
+### Respuestas
 
 | Campo | Valor aceptado |
 |---|---|
@@ -214,15 +212,13 @@ El EML identifica el adjunto real, los eventos muestran qué se ejecutó y el PC
 | Clave del documento transferido | `3c7a8c88466f5b869bea15f333e3be01` |
 | SHA-256 del documento recuperado | `c19c4964c2a77872c49750cc1c2dd443b48fba984b41988aec6fbc780faed09a` |
 
+### Revisar el nombre y el hash
 
+Para revisar el adjunto hay que trabajar con sus bytes MIME, no fiarse del nombre que muestra el correo. El carácter `U+202E` cambia la dirección de presentación del texto y puede hacer que la extensión aparente resulte engañosa. Mostrar `repr(nombre)` y los puntos de código ayuda a verlo.
 
-### Cómo sustentar cada respuesta
+Para el PID interesa el evento que crea el intérprete; el padre puede tener otro número. Y el hash final se calcula sobre el documento ya recuperado, no sobre los bytes cifrados de la transferencia.
 
-Extraer los bytes de los adjuntos MIME y calcular SHA-256 permite identificar el archivo sin depender del nombre visible. Para examinar el nombre conviene mostrar su representación escapada y los puntos de código: U+202E altera la dirección de presentación del texto, por lo que la extensión aparente puede inducir a error.
-
-El PID debe salir del evento que crea el intérprete, no del proceso padre ni del proceso de descarga. El host descargador debe contrastarse con DNS o la petición observada. Finalmente, el hash del documento corresponde a los bytes recuperados, no al contenedor cifrado de la captura.
-
-Los siguientes comandos son una guía de reproducción, no una transcripción conservada de la sesión original:
+Este ejemplo sirve para extraer el hash y revisar el nombre de los adjuntos. Es una guía para repetir la comprobación; no conservamos la salida original de este paso:
 
 ```python
 from email import policy
@@ -238,7 +234,7 @@ for part in msg.iter_attachments():
     print(hashlib.sha256(payload).hexdigest())
 ```
 
-No se conserva en este paquete el PCAP ni el adjunto original de este reto. Por ello no se afirma un modo de cifrado, un nombre de intérprete o una secuencia detallada de comandos que las respuestas guardadas no acreditan por sí solas.
+Faltan el PCAP y el adjunto original en las notas que conservamos. Por eso dejamos las respuestas verificadas, sin añadir un nombre de intérprete o un modo de cifrado que no podamos contrastar.
 
 ![Figura 5. Evidencia conservada de The Waiting Room completado.](evidencias/tryhackme-waiting-room-completado.png)
 
@@ -246,9 +242,9 @@ No se conserva en este paquete el PCAP ni el adjunto original de este reto. Por 
 
 ## 06. Day-O: de memoria ejecutable a caché descifrada
 
-### Identificación y extracción
+### Localizar el proceso y extraer la región
 
-El volcado `memory.mem`, de unos 4,1 GB, se examinó con Volatility 3 y los símbolos incluidos. El proceso sospechoso fue ReviewClient.exe, PID 6260. Malfind señaló una región privada `PAGE_EXECUTE_READWRITE` de `0x8e0000` a `0x8e0fff`. La protección es un indicio; el contenido y los archivos relacionados permitieron sostener la conclusión.
+Aquí trabajamos con `memory.mem`, de unos 4,1 GB, usando Volatility 3 y los símbolos incluidos. ReviewClient.exe, PID 6260, tenía una región privada `PAGE_EXECUTE_READWRITE` entre `0x8e0000` y `0x8e0fff`. Era la región que había que extraer y comparar con los archivos del proceso.
 
 ```bash
 cd ~/Desktop/artifacts
@@ -258,15 +254,15 @@ vol -f memory.mem windows.handles --pid 6260
 vol -f memory.mem -o /tmp/day windows.dumpfiles --pid 6260
 ```
 
-Los handles relacionaron el proceso con `review-cover.png` y `review-cache.dat`, dentro del paquete de revisión documental. La comparación del payload con el PNG recuperado encontró el código en el desplazamiento 28829. La marca IEND comienza en 28821; el código está después del cierre del último chunk y su CRC. Esto sostiene `T1027.009`, Embedded Payloads. La respuesta inicialmente considerada, T1027.003, no fue aceptada y se corrigió con esta comprobación de bytes.
+Los handles apuntaban a `review-cover.png` y `review-cache.dat`. Al comparar el volcado con el PNG recuperado, el mismo código aparecía en el offset 28829. La marca IEND estaba en 28821: el payload venía después del último chunk y su CRC. Aquí hubo una corrección durante la resolución: probamos T1027.003, pero la respuesta correcta era `T1027.009`, Embedded Payloads. El offset permitió entender el motivo.
 
-### Desofuscación estática
+### Leer el comando del shellcode
 
-El shellcode x86 apilaba inmediatos y restaba 0x25 a los bytes para reconstruir un comando. Resolvía WinExec, confirmado por la cadena construida y la búsqueda de exportaciones. La respuesta aceptada fue `kernel32.WinExec`.
+El shellcode x86 construía un comando apilando inmediatos y restando 0x25 a cada byte. También resolvía WinExec mediante la búsqueda de exportaciones. La respuesta que aceptó la sala fue `kernel32.WinExec`.
 
-La cadena reconstruida invocaba PowerShell con EncodedCommand. Se decodificó el Base64 como UTF-16LE sin ejecutar PowerShell. El script configuraba AES-CBC y PKCS7, y utilizaba los primeros 16 bytes de `review-cache.dat` como IV. Su salida prevista era `review-cache.zip`.
+Lo reconstruido era un PowerShell con EncodedCommand. Decodificamos el Base64 como UTF-16LE para leerlo. El script usaba AES-CBC con PKCS7 y tomaba los primeros 16 bytes de `review-cache.dat` como IV; el resultado debía ser `review-cache.zip`.
 
-El descifrado produjo un ZIP con `release/approval.txt` y `release/contacts.csv`. La referencia de aprobación del primer archivo contenía la flag. La lectura del ZIP fue posible pese al relleno de páginas del archivo recuperado de memoria.
+Al descifrar la caché aparecieron `release/approval.txt` y `release/contacts.csv` dentro de un ZIP. La flag estaba en la referencia de aprobación de approval.txt. Aunque el archivo recuperado tenía relleno de páginas al final, zipfile pudo abrirlo.
 
 ### Respuestas aceptadas
 
@@ -282,11 +278,11 @@ El descifrado produjo un ZIP con `release/approval.txt` y `release/contacts.csv`
 
 ![Figura 6. Captura de la sesión: reto al 100 % y decodificación de la caché en la terminal.](evidencias/day-o-evidencia-100.png)
 
-El script de reproducción se incluye como `scripts/day-o-recuperar.py`. Sus offsets están ajustados al payload de este reto; no son una regla general para cualquier shellcode. Requiere los archivos extraídos por Volatility y el entorno analysis-python con Crypto.
+El script completo está en `scripts/day-o-recuperar.py`. Usa los offsets de este payload y espera los archivos extraídos en `/tmp/day`. Lo ejecutamos con el entorno analysis-python, que tenía Crypto.
 
 ### Reconstrucción del comando y lectura del ZIP
 
-El núcleo de la recuperación se puede revisar sin invocar la cadena reconstruida. La operación sobre los inmediatos devuelve los bytes en el orden que tendrían en la pila; después se deshace la resta y se decodifica la capa de PowerShell:
+Esta es la parte que reconstruye el comando y abre la caché. Se invierte el orden de los inmediatos para recuperar el orden de la pila, se resta 0x25 y se decodifica PowerShell como texto:
 
 ```python
 import base64, io, zipfile
@@ -307,13 +303,13 @@ print(archive.read('release/approval.txt').decode())
 
 ## 07. Strange & Unusual Activity: C2 entre tráfico legítimo
 
-### Preparación y fuentes
+### Los datos en Kibana
 
-Se investigó un día completo, el 7 de octubre de 2025, en los índices zeek-dns y zeek-conn de Kibana. Había 3995 registros DNS y 5345 conexiones. Las búsquedas usadas en el análisis incluyeron todos los documentos, evitando sacar conclusiones sobre un conjunto truncado.
+La búsqueda cubría el 7 de octubre de 2025 en Kibana. Los índices zeek-dns y zeek-conn tenían 3995 consultas DNS y 5345 conexiones. Comprobamos que los resultados exportados incluían todos los documentos antes de contar.
 
-Los dominios con muchas consultas no son necesariamente maliciosos. En este conjunto también aparecían comprobaciones de conectividad y telemetría. El dominio que se correlacionó con el comportamiento del puesto afectado fue `edge-metrics-sync.net`, que resolvía a `203.0.113.77`.
+Había bastante tráfico de comprobaciones de conectividad y telemetría. El dominio que acabó encajando con la actividad del host fue `edge-metrics-sync.net`, que resolvía a `203.0.113.77`.
 
-### Consultas y comprobaciones
+### Buscar el dominio y las conexiones
 
 Seleccionar la ventana completa del día de captura y filtrar DNS:
 
@@ -321,7 +317,7 @@ Seleccionar la ventana completa del día de captura y filtrar DNS:
 query : "edge-metrics-sync.net" and id.orig_h : "10.10.14.160"
 ```
 
-Se encontraron 289 consultas, todas del mismo origen. Los intervalos fluctuaban alrededor de 300 segundos, con promedio de 299,66 entre la primera y la última consulta. La variación no elimina el patrón periódico; no se exige que cada diferencia sea exactamente 300.
+El filtro devolvió 289 consultas del mismo origen. Entre consultas había unos 300 segundos, con una media de 299,66. Los intervalos variaban ligeramente, pero el patrón de cinco minutos seguía siendo claro.
 
 Después se examinaron las conexiones al destino resuelto:
 
@@ -333,9 +329,9 @@ Ordenando `orig_bytes` de mayor a menor apareció una conexión con 54078822 byt
 
 ### Por qué el conteo aceptado es 289
 
-Había 288 conexiones pequeñas y una transferencia masiva. La pista del reto pide contar las consultas DNS al dominio desde el host comprometido, por lo que la respuesta aceptada es 289. Restar la transferencia masiva para contestar 288 cambiaría el criterio solicitado.
+Este conteo tenía una trampa: en conexiones había 288 pequeñas y una transferencia grande. La pista de la pregunta pedía contar DNS desde el host al dominio C2. Por eso la respuesta era 289; quitar la transferencia grande para responder 288 era contar otra cosa.
 
-`orig_bytes` mide los bytes enviados por el iniciador de la conexión. No se debe sustituir por los paquetes enviados, por `resp_bytes` ni por la suma de ambos sentidos. La telemetría de conexiones sostiene la magnitud de la salida; no revela por sí sola qué documentos viajaron dentro de SSL.
+Para los bytes enviados usamos `orig_bytes`, que corresponde al iniciador de la conexión. `resp_bytes` era el sentido contrario. Como el tráfico era SSL, estos registros permiten medir la salida, pero no leer qué documentos se enviaron.
 
 | Campo | Respuesta aceptada |
 |---|---|
@@ -349,7 +345,7 @@ Había 288 conexiones pequeñas y una transferencia masiva. La pista del reto pi
 
 ### Comprobar el resultado exportado
 
-Este ejemplo reproduce la comprobación de la respuesta JSON de Elasticsearch. Requiere exportar de nuevo conn.json desde el laboratorio; ese conjunto no se conserva en el paquete. La igualdad entre hits.total y la longitud de hits evita analizar solo la primera página de resultados.
+Con la respuesta JSON de Elasticsearch, esta comprobación da el total y la conexión más grande. Hay que volver a exportar `/tmp/conn.json` desde el laboratorio para repetirla; no está incluido en el repositorio. Las dos aserciones evitan contar solo una página de resultados.
 
 ```python
 import json
@@ -369,9 +365,9 @@ print(len(c2), largest['orig_bytes'], largest['uid'])
 
 ## 08. Dead Endpoint: recuperación del ransomware
 
-### Preservar y montar la evidencia
+### Montar la imagen
 
-Se trabajó sobre `disk.img`, una imagen de unos 12 GB. mmls mostró la partición principal en el sector 2099200. Con sectores de 512 bytes, el desplazamiento es 1074790400. El montaje incluyó solo lectura y noload para no reproducir el diario del sistema de archivos.
+El archivo de este reto era `disk.img`, de unos 12 GB. Con mmls vimos que la partición empezaba en el sector 2099200. Multiplicando por 512 obtuvimos el offset 1074790400 para montarla. Usamos `ro,noload` para leerla sin reproducir el journal.
 
 ```bash
 cd ~/Desktop/artifacts
@@ -380,11 +376,11 @@ sudo mkdir -p /mnt/dead
 sudo mount -o ro,noload,loop,offset=1074790400 disk.img /mnt/dead
 ```
 
-### Reconstruir la ejecución
+### Encontrar la entrada del ataque
 
-La aplicación estaba en `/srv/gallery/app/gallery.py`. El endpoint POST `/api/albums/<int:album_id>/export` interpolaba `selection` en un comando tar que pasaba a subprocess.run con shell=True. El parámetro no estaba separado como argumento seguro de un proceso.
+En `/srv/gallery/app/gallery.py` encontramos el endpoint POST `/api/albums/<int:album_id>/export`. Metía `selection` dentro de un comando tar y lo ejecutaba con `shell=True`. Eso dejaba que el valor se interpretase como parte de un comando de shell.
 
-Para examinar SQLite se copiaron la base, el WAL y el SHM a un directorio de trabajo, manteniendo la imagen montada sin cambios. Es importante hacer la expansión del comodín dentro del contexto con permisos de lectura: el usuario sin privilegios no podía recorrer todos los directorios de la evidencia.
+Copiamos la base SQLite junto con el WAL y el SHM para consultarla aparte. Un detalle de permisos: el comodín tenía que expandirse dentro del `sudo sh -c`, porque el usuario normal no podía recorrer la carpeta de origen.
 
 ```bash
 mkdir -p /tmp/dead
@@ -394,7 +390,7 @@ sudo sqlite3 /tmp/dead/gallery.sqlite3 'select * from exports;'
 
 La tabla exports conservó un trabajo del álbum 1 que añadía, después de un punto y coma, una descarga mediante curl, un cambio de permisos y el lanzamiento de `/srv/gallery/.cache/.indexd`. El trabajo fue solicitado a las 05:36:54.547 UTC del 20 de octubre de 2026 y terminó a las 05:36:54.753. Esa evidencia, junto con el código vulnerable, identificó `/api/albums/1/export` como el endpoint abusado.
 
-### Identificar el cifrado sin ejecutar el archivo
+### Revisar .indexd
 
 ```bash
 B=/mnt/dead/srv/gallery/.cache/.indexd
@@ -403,15 +399,15 @@ sudo strings "$B" | grep -E 'EVP|AES|RAND|clock|locked|originals'
 sudo objdump -d -M intel "$B" > /tmp/index.dis
 ```
 
-El archivo era un ELF x86-64 y su SHA-256 fue `6a0e5b25a919a94952b34e38d8e8b595036d1ef6a026bf5cca38a0d34459102f`. Importaba EVP_aes_256_gcm y apuntaba a tres JPEG bajo `/srv/gallery/media/originals`. El análisis se hizo sobre bytes y desensamblado: el ransomware no se ejecutó.
+`.indexd` era un ELF x86-64 con SHA-256 `6a0e5b25a919a94952b34e38d8e8b595036d1ef6a026bf5cca38a0d34459102f`. Entre los imports estaba EVP_aes_256_gcm, y las rutas apuntaban a tres JPEG de `/srv/gallery/media/originals`. Lo revisamos con strings y desensamblado, sin ejecutarlo.
 
-### Debilidad en la generación de clave
+### Una clave que dependía de la hora
 
 La rutina consultaba CLOCK_REALTIME y calculaba una semilla como `segundos * 1000 + nanosegundos // 1000000`. Desde ella generaba cuatro salidas de SplitMix64, cada una serializada en little endian, para formar la clave AES de 32 bytes. El nonce de 12 bytes se generaba con RAND_bytes y quedaba en el archivo.
 
-Una primitiva criptográfica fuerte no compensa una clave predecible. Las marcas de cambio de los archivos y el registro del trabajo situaron el inicio del cifrado en un intervalo de milisegundos. Se probaron semillas cercanas al instante observado y se verificó cada candidata mediante GCM, no solo buscando una cabecera JPEG plausible.
+El problema estaba en la semilla temporal. Las marcas de los archivos y la hora del trabajo acotaban cuándo había arrancado el cifrado, así que probamos los milisegundos cercanos. Para aceptar una clave exigimos que GCM validase la etiqueta, no solo que los primeros bytes parecieran un JPEG.
 
-### Formato de archivo recuperado
+### La cabecera de los archivos .locked
 
 | Offset | Longitud | Contenido |
 |---|---|---|
@@ -431,7 +427,7 @@ plain = AESGCM(key(seed)).decrypt(
 )
 ```
 
-La semilla correcta fue `1792474614662`. Se validó para las tres imágenes con autenticación GCM y tamaños originales coherentes: yard_0147.jpg, 278610 bytes; yard_0148.jpg, 418140 bytes; yard_0152.jpg, 180683 bytes. La última contenía el checklist de inspección.
+La semilla que funcionó fue `1792474614662`. Pasó la autenticación GCM en las tres imágenes y devolvió los tamaños esperados: yard_0147.jpg, 278610 bytes; yard_0148.jpg, 418140 bytes; yard_0152.jpg, 180683 bytes. En yard_0152.jpg estaba el checklist con la flag al pie.
 
 ![Figura 8. Checklist recuperado de yard_0152.jpg; la flag aparece al pie. Captura original de la sesión.](evidencias/dead-endpoint-checklist-recuperado.png)
 
@@ -446,9 +442,9 @@ La semilla correcta fue `1792474614662`. Se validó para las tres imágenes con 
 | Semilla | `1792474614662` |
 | Flag | `THM{R4ns0mw4r3_K3ys_Ar3_A_M4tt3r_0f_T1m3}` |
 
-### Reproducción del descifrado
+### Recuperar las imágenes
 
-El archivo `scripts/dead-endpoint-recuperar.py` incluye la derivación completa y valida tanto la etiqueta como el tamaño original. Escribe archivos nuevos en una carpeta distinta y se niega a sobrescribir un destino existente.
+Dejamos el descifrador en `scripts/dead-endpoint-recuperar.py`. Incluye SplitMix64, comprueba la etiqueta GCM y verifica el tamaño original. Guarda copias en otra carpeta y falla si el archivo de salida ya existe.
 
 ```bash
 sudo python3 scripts/dead-endpoint-recuperar.py \
@@ -459,13 +455,13 @@ sudo python3 scripts/dead-endpoint-recuperar.py \
 
 <a id="reto-09"></a>
 
-## 09. Conclusiones y trazabilidad
+## 09. Notas finales
 
-Los retos comparten una misma disciplina: correlacionar fuentes y comprobar el resultado. En Windows, la creación de procesos resolvió la ambigüedad del comodín usado para certutil. En memoria, el desplazamiento del código después de IEND permitió corregir la clasificación de ocultación. En red, se distinguió el conteo DNS de las conexiones pequeñas. En disco, la autenticación GCM convirtió una hipótesis de semilla temporal en una recuperación verificable.
+Dos detalles hicieron cambiar respuestas durante la resolución: en Day-O, encontrar el código después de IEND aclaró la subtécnica MITRE; en el reto de red, leer la pista del conteo DNS resolvió la diferencia entre 288 y 289. En Dead Endpoint, la comprobación decisiva fue que GCM validase los tres archivos con la misma semilla.
 
-Las limitaciones también forman parte del resultado. En threat hunting se acreditó la ejecución del comando de exfiltración, pero no la recepción remota ni el robo del build completo. En Repossessed se conservaron las métricas y parte de las clasificaciones, no la investigación completa de las nueve alertas. En el tabletop se conserva el desenlace, no todas las decisiones. Estas diferencias se mantienen visibles para que una evaluación de la plataforma no sustituya a la evidencia técnica.
+Quedan huecos en las notas: las nueve alertas del SOC no están documentadas una por una, el tabletop conserva el cierre y de Waiting Room faltan pasos de extracción. Las respuestas y capturas disponibles están en sus apartados. En Quiet As The Grave, el comando de subida sí quedó registrado, pero no la recepción del ZIP en el C2.
 
-### Fuentes primarias y referencias
+### Enlaces
 
 - Página del evento y títulos oficiales: https://tryhackme.com/downtime
 - Repossessed: https://tryhackme.com/soc-sim/scenarios?scenario=repossessed
@@ -478,8 +474,8 @@ Las limitaciones también forman parte del resultado. En threat hunting se acred
 - Dead Endpoint: https://tryhackme.com/room/deadendpoint
 - Embedded Payloads: https://attack.mitre.org/techniques/T1027/009/
 
-La página del evento y las respuestas completadas de Handbook y The Waiting Room se reconsultaron al redactar el dossier. El resto de los resultados se apoya en capturas, notas y datos de la sesión conservados en el paquete. Los enlaces de plataforma pueden requerir inicio de sesión.
+Las salas pueden pedir inicio de sesión. Los nombres del evento y las respuestas de Handbook y The Waiting Room se comprobaron de nuevo al preparar el writeup.
 
-### Contenido del paquete
+### Archivos del repositorio
 
-`README.md` es la versión editable; `WRITEUP.pdf`, la versión maquetada. La carpeta evidencias conserva capturas originales y recortes identificados. La carpeta scripts incluye las dos rutinas de recuperación. Los extractos crudos y las etapas completas se conservan en el paquete local; se omiten de la versión publicada en GitHub. El PDF corresponde al dossier original y sus referencias a fuentes describen ese paquete local. `MANIFEST.sha256` permite comprobar la integridad de los archivos entregados.
+El texto actualizado está en `README.md`. `WRITEUP.pdf` conserva la primera versión del informe. Las capturas están en evidencias y los descifradores en scripts. Los logs crudos y las etapas completas de la investigación quedaron en el paquete local. `MANIFEST.sha256` recoge los hashes de los archivos publicados.
